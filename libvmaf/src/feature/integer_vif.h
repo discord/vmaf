@@ -130,6 +130,35 @@ VifResiduals vif_compute_line_residuals(VifPublicState *s, unsigned from,
 #ifdef _MSC_VER
 #include <intrin.h>
 
+#ifdef DISCORD_WINDOWS_PORT
+static inline int custom_clz(unsigned long long x) {
+    // Our build is 32-bit, so 64-bit versions aren't available
+    if (x == 0) {
+        return 64;
+    }
+
+    int n = 0;
+    for (int i = 63; i >= 0; i--) {
+        if ((x & (unsigned __int64)(1ULL << i)) == 0) {
+            n++;
+        }
+        else {
+            break;
+        }
+    }
+
+    return n;
+}
+
+static inline int __builtin_clz(unsigned x) {
+    return custom_clz(x);
+}
+
+static inline int __builtin_clzll(unsigned long long x) {
+    return custom_clz(x);
+}
+
+#else // DISCORD_WINDOWS_PORT
 static inline int __builtin_clz(unsigned x) {
     return (int)__lzcnt(x);
 }
@@ -137,6 +166,8 @@ static inline int __builtin_clz(unsigned x) {
 static inline int __builtin_clzll(unsigned long long x) {
     return (int)__lzcnt64(x);
 }
+
+#endif
 
 #endif
 

@@ -364,7 +364,8 @@ if is_cuda_enabled
     common_cuda_objects += cuda_static_lib.extract_all_objects()
 endif
 
-thread_lib = dependency('threads')
+threads_impl_lib = dependency('threads')
+thread_lib = declare_dependency(dependencies: [threads_impl_lib, posix_dependency])
 math_lib = cc.find_library('m', required : false)
 
 vmaf_include = include_directories(
@@ -439,7 +440,7 @@ libvmaf_feature_static_lib = static_library(
     'libvmaf_feature',
     libvmaf_feature_sources,
     include_directories : [libvmaf_include, vmaf_include, cuda_dir],
-    dependencies: [stdatomic_dependency, cuda_dependency],
+    dependencies: [posix_dependency, stdatomic_dependency, cuda_dependency],
     objects: common_cuda_objects
 )
 

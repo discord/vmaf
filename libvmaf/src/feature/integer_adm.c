@@ -22,6 +22,8 @@
 #include "feature_extractor.h"
 #include "feature_name.h"
 #include "integer_adm.h"
+// TODO: need __builtin_clz from:
+#include "integer_vif.h"
 #include "log.h"
 
 #if ARCH_X86
