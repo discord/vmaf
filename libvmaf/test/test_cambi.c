@@ -257,8 +257,9 @@ static char *test_decimate_generic()
 
 static char *test_filter_mode()
 {
+#define w 5
     VmafPicture filtered_image, image;
-    unsigned w = 5, h = 5;
+    unsigned h = 5;
     uint16_t buffer[3 * w];
 
     int err = 0;
@@ -303,6 +304,7 @@ static char *test_filter_mode()
     vmaf_picture_unref(&filtered_image);
 
     return NULL;
+#undef w
 }
 
 static char *test_get_mask_index()

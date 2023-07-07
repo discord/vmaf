@@ -1093,7 +1093,8 @@ int vmaf_score_pooled_model_collection(VmafContext *vmaf,
     const char *suffix_stddev = "_stddev";
     const size_t name_sz =
         strlen(model_collection->name) + strlen(suffix_lo) + 1;
-    char name[name_sz];
+    char* name = malloc(name_sz);
+    if (!name) return -ENOMEM;
     memset(name, 0, name_sz);
 
     snprintf(name, name_sz, "%s%s", model_collection->name, suffix_bagging);
@@ -1116,6 +1117,7 @@ int vmaf_score_pooled_model_collection(VmafContext *vmaf,
                                      &score->bootstrap.ci.p95.hi,
                                      index_low, index_high);
 
+    free(name);
     return err;
 }
 

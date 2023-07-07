@@ -12,6 +12,10 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#ifdef DISCORD_WINDOWS_PORT
+#define mode_t int
+#endif
+
 /*
  * Recursively `mkdir(path, mode)`
  */
