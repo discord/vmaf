@@ -130,6 +130,21 @@ VifResiduals vif_compute_line_residuals(VifPublicState *s, unsigned from,
 #ifdef _MSC_VER
 #include <intrin.h>
 
+#ifdef DISCORD_WINDOWS_PORT
+static inline int __builtin_clz(unsigned x) {
+    unsigned long out = 0;
+    if (x == 0 || !_BitScanReverse(&out, x)) return 32;
+    return 31 - out;
+}
+
+static inline int __builtin_clzll(unsigned long long x) {
+    if (x <= UINT32_MAX) return 32 + __builtin_clz((unsigned)x);
+    return __builtin_clz(x >> 32u);
+}
+
+#else // DISCORD_WINDOWS_PORT
+// Note that these implementations assume a hardware instruction is available, otherwise they will be wrong
+// TODO: consider using the Discord variants universally
 static inline int __builtin_clz(unsigned x) {
     return (int)__lzcnt(x);
 }
@@ -137,6 +152,8 @@ static inline int __builtin_clz(unsigned x) {
 static inline int __builtin_clzll(unsigned long long x) {
     return (int)__lzcnt64(x);
 }
+
+#endif
 
 #endif
 

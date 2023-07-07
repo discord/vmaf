@@ -49,8 +49,23 @@ if not cc.check_header('stdatomic.h')
     endif
 endif
 
+# to compile with msvc, we need to bring in a POSIX translation layer
+posix_dependency = []
+if cc.get_id() == 'msvc'
+    posix_dependency = declare_dependency(
+        include_directories : include_directories('src/compat/discord_win'),
+    )
+endif
+
+# instead of quirking to MSVC in code, guard with a specific flag for easier auditing
+if cc.get_id() == 'msvc'
+    add_global_arguments('-DDISCORD_WINDOWS_PORT', language: 'c')
+endif
+
 subdir('include')
 subdir('src')
-subdir('tools')
+if cc.get_id() != 'msvc'
+    subdir('tools')
+endif
 subdir('doc')
 subdir('test')

@@ -43,6 +43,9 @@ SOFTWARE.
 */
 
 #include <errno.h>
+#ifdef DISCORD_WINDOWS_PORT
+#define _USE_MATH_DEFINES
+#endif
 #include <math.h>
 #include <stddef.h>
 #include <string.h>

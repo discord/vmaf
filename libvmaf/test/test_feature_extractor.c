@@ -54,9 +54,9 @@ static char *test_get_feature_extractor_by_name_and_feature_name()
 
 static char *test_feature_extractor_context_pool()
 {
+#define n_threads 8
     int err = 0;
 
-    const unsigned n_threads = 8;
     VmafFeatureExtractorContextPool *pool;
     err = vmaf_fex_ctx_pool_create(&pool, n_threads);
     mu_assert("problem during vmaf_fex_ctx_pool_create", !err);
@@ -82,6 +82,7 @@ static char *test_feature_extractor_context_pool()
     mu_assert("problem during vmaf_fex_ctx_pool_destroy", !err);
 
     return NULL;
+#undef n_threads
 }
 
 static char *test_feature_extractor_flush()
