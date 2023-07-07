@@ -39,7 +39,10 @@
 
 #include <windows.h>
 
+// Unconvinced that this code compiles, but marking for now
+#ifndef DISCORD_WINDOWS_PORT
 #include "common/attributes.h"
+#endif
 
 typedef volatile LONG  __declspec(align(32)) atomic_int;
 typedef volatile ULONG __declspec(align(32)) atomic_uint;
