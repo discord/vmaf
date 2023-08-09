@@ -44,10 +44,10 @@ cglobal cpu_cpuid, 0, 5, 0, regs, leaf, subleaf
 %endif
     RET
 
-cglobal cpu_xgetbv, 0, 4, 0, regs, xcr
-    mov        r3, regsmp
+cglobal cpu_xgetbv, 0, 5, 0, regs, xcr
+    mov        r4, regsmp
     movifnidn ecx, xcrm
     xgetbv
-    mov  [r3+4*0], eax
-    mov  [r3+4*1], edx
+    mov  [r4+4*0], eax
+    mov  [r4+4*1], edx
     RET
