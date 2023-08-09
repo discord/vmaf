@@ -90,7 +90,7 @@ static char *test_json_model()
     return NULL;
 }
 
-#if VMAF_BUILT_IN_MODELS
+#if defined(VMAF_BUILT_IN_MODELS) && !defined(DISCORD_PORT)
 static char *test_built_in_model()
 {
     int err = 0;
@@ -374,7 +374,7 @@ static char *test_model_set_flags()
 char *run_tests()
 {
     mu_run_test(test_json_model);
-#if VMAF_BUILT_IN_MODELS
+#if defined(VMAF_BUILT_IN_MODELS) && !defined(DISCORD_PORT)
     mu_run_test(test_built_in_model);
 #endif
     mu_run_test(test_model_load_and_destroy);

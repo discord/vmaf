@@ -57,9 +57,12 @@ if cc.get_id() == 'msvc'
     )
 endif
 
-# instead of quirking to MSVC in code, guard with a specific flag for easier auditing
-if cc.get_id() == 'msvc'
-    add_global_arguments('-DDISCORD_WINDOWS_PORT', language: 'c')
+if get_option('enable_discord_mode') == true
+    add_global_arguments('-DDISCORD_PORT', language: 'c')
+    # instead of quirking to MSVC in code, guard with a specific flag for easier auditing
+    if cc.get_id() == 'msvc'
+        add_global_arguments('-DDISCORD_WINDOWS_PORT', language: 'c')
+    endif
 endif
 
 subdir('include')
