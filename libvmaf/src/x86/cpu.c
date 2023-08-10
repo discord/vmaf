@@ -35,13 +35,18 @@ typedef struct {
     uint32_t eax, ebx, ecx, edx;
 } CpuidRegisters;
 
+typedef struct {
+    uint32_t eax, edx;
+} XgetbvRegisters;
+
 void vmaf_cpu_cpuid(CpuidRegisters *regs, unsigned leaf, unsigned subleaf);
-uint64_t vmaf_cpu_xgetbv(unsigned xcr);
+void vmaf_cpu_xgetbv(XgetbvRegisters *regs, unsigned xcr);
 
 #define X(reg, mask) (((reg) & (mask)) == (mask))
 
 unsigned vmaf_get_cpu_flags_x86(void) {
     CpuidRegisters r = { 0 };
+    XgetbvRegisters xr = { 0 };
     vmaf_cpu_cpuid(&r, 0, 0);
     const unsigned max_leaf = r.eax;
     unsigned flags = 0;
@@ -56,16 +61,15 @@ unsigned vmaf_get_cpu_flags_x86(void) {
                     flags |= VMAF_X86_CPU_FLAG_SSE41;
             }
         }
-#if ARCH_X86_64
         /* We only support >128-bit SIMD on x86-64. */
         if (X(r.ecx, 0x18000000)) /* OSXSAVE/AVX */ {
-            const uint64_t xcr0 = vmaf_cpu_xgetbv(0);
-            if (X(xcr0, 0x00000006)) /* XMM/YMM */ {
+            vmaf_cpu_xgetbv(&xr, 0);
+            if (X(xr.eax, 0x00000006)) /* XMM/YMM */ {
                 if (max_leaf >= 7) {
                     vmaf_cpu_cpuid(&r, 7, 0);
                     if (X(r.ebx, 0x00000128)) /* BMI1/BMI2/AVX2 */ {
                         flags |= VMAF_X86_CPU_FLAG_AVX2;
-                        if (X(xcr0, 0x000000e0)) /* ZMM/OPMASK */ {
+                        if (X(xr.eax, 0x000000e0)) /* ZMM/OPMASK */ {
                             if (X(r.ebx, 0xd0030000))
                                 flags |= VMAF_X86_CPU_FLAG_AVX512;
                             if (X(r.ebx, 0xd0230000) && X(r.ecx, 0x00005f42))
@@ -75,7 +79,6 @@ unsigned vmaf_get_cpu_flags_x86(void) {
                 }
             }
         }
-#endif
     }
 
     return flags;
