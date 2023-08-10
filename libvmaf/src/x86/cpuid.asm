@@ -44,11 +44,10 @@ cglobal cpu_cpuid, 0, 5, 0, regs, leaf, subleaf
 %endif
     RET
 
-cglobal cpu_xgetbv, 0, 0, 0, xcr
+cglobal cpu_xgetbv, 0, 5, 0, regs, xcr
+    mov        r4, regsmp
     movifnidn ecx, xcrm
     xgetbv
-%if ARCH_X86_64
-    shl       rdx, 32
-    or        rax, rdx
-%endif
+    mov  [r4+4*0], eax
+    mov  [r4+4*1], edx
     RET
