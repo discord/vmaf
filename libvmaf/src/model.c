@@ -43,6 +43,13 @@ extern const int src_vmaf_4k_v0_6_1neg_json_len;
 #endif
 
 static const VmafBuiltInModel built_in_models[] = {
+#if DISCORD_PORT
+    {
+        .version = "vmaf_v0.6.1",
+        .data = &src_vmaf_v0_6_1_json,
+        .data_len = &src_vmaf_v0_6_1_json_len,
+    },
+#else
 #if VMAF_BUILT_IN_MODELS
 #if VMAF_FLOAT_FEATURES
     {
@@ -91,6 +98,7 @@ static const VmafBuiltInModel built_in_models[] = {
         .data = &src_vmaf_4k_v0_6_1neg_json,
         .data_len = &src_vmaf_4k_v0_6_1neg_json_len,
     },
+#endif
 #endif
     { 0 }
 };
