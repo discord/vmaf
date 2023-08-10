@@ -135,21 +135,28 @@ if built_in_models_enabled
             error('xxd with support for -n option is required building as a subproject. Please install a newer version of xxd or disable built-in models.')
         endif
 
-        model_files = [
-            'vmaf_v0.6.1.json',
-            'vmaf_b_v0.6.3.json',
-            'vmaf_v0.6.1neg.json',
-            'vmaf_4k_v0.6.1.json',
-            'vmaf_4k_v0.6.1neg.json',
-        ]
-
-        if float_enabled
-            model_files += [
-              'vmaf_float_v0.6.1neg.json',
-              'vmaf_float_v0.6.1.json',
-              'vmaf_float_b_v0.6.3.json',
-              'vmaf_float_4k_v0.6.1.json',
+        model_files = []
+        if get_option('enable_discord_mode') == true
+            model_files = [
+                'vmaf_v0.6.1.json',
             ]
+        else
+            model_files = [
+                'vmaf_v0.6.1.json',
+                'vmaf_b_v0.6.3.json',
+                'vmaf_v0.6.1neg.json',
+                'vmaf_4k_v0.6.1.json',
+                'vmaf_4k_v0.6.1neg.json',
+            ]
+
+            if float_enabled
+                model_files += [
+                'vmaf_float_v0.6.1neg.json',
+                'vmaf_float_v0.6.1.json',
+                'vmaf_float_b_v0.6.3.json',
+                'vmaf_float_4k_v0.6.1.json',
+                ]
+            endif
         endif
 
         foreach model_file : model_files
