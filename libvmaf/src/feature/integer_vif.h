@@ -131,16 +131,20 @@ VifResiduals vif_compute_line_residuals(VifPublicState *s, unsigned from,
 #include <intrin.h>
 
 #ifdef DISCORD_WINDOWS_PORT
+#if !defined(__has_builtin) || !__has_builtin(__builtin_clz)
 static inline int __builtin_clz(unsigned x) {
     unsigned long out = 0;
     if (x == 0 || !_BitScanReverse(&out, x)) return 32;
     return 31 - out;
 }
+#endif
 
+#if !defined(__has_builtin) || !__has_builtin(__builtin_clzll)
 static inline int __builtin_clzll(unsigned long long x) {
     if (x <= UINT32_MAX) return 32 + __builtin_clz((unsigned)x);
     return __builtin_clz(x >> 32u);
 }
+#endif
 
 #else // DISCORD_WINDOWS_PORT
 // Note that these implementations assume a hardware instruction is available, otherwise they will be wrong
