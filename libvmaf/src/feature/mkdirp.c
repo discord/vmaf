@@ -12,6 +12,10 @@
 #include <string.h>
 #include "mkdirp.h"
 
+#if DISCORD_WINDOWS_PORT
+#include <direct.h>
+#endif
+
 static char *
 path_normalize(const char *path) {
   if (!path) return NULL;
@@ -65,8 +69,12 @@ mkdirp(const char *path, mode_t mode) {
 
   // make this one if parent has been made
   #ifdef _WIN32
+    #if DISCORD_WINDOWS_PORT
+    int rc = _mkdir(pathname);
+    #else
     // http://msdn.microsoft.com/en-us/library/2fkk4dzw.aspx
     int rc = mkdir(pathname);
+    #endif
   #else
     int rc = mkdir(pathname, mode);
   #endif
