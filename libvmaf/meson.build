@@ -51,18 +51,25 @@ endif
 
 # to compile with msvc, we need to bring in a POSIX translation layer
 posix_dependency = []
-if cc.get_id() == 'msvc'
-    posix_dependency = declare_dependency(
-        include_directories : include_directories('src/compat/discord_win'),
-    )
-endif
 
 if get_option('enable_discord_mode') == true
     add_global_arguments('-DDISCORD_PORT', language: 'c')
     # instead of quirking to MSVC in code, guard with a specific flag for easier auditing
     if cc.get_id() == 'msvc'
         add_global_arguments('-DDISCORD_WINDOWS_PORT', language: 'c')
+        pthread_shim_library = static_library(
+            'pthread_shim_library',
+            ['./src/compat/discord_win/pthread.c'],
+        )
+        posix_dependency = declare_dependency(
+            link_with: pthread_shim_library,
+            include_directories : include_directories('src/compat/discord_win'),
+        )
     endif
+elif cc.get_id() == 'msvc'
+    posix_dependency = declare_dependency(
+        include_directories : include_directories('src/compat/discord_win'),
+    )
 endif
 
 subdir('include')
