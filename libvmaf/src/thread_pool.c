@@ -92,16 +92,6 @@ static void *vmaf_thread_pool_runner(void *p)
     return NULL;
 }
 
-#ifdef DISCORD_WINDOWS_PORT
-static unsigned __stdcall vmaf_thread_pool_runner_windows_adapter(void *p) {
-    vmaf_thread_pool_runner(p);
-    return 0;
-}
-#define THREAD_FN vmaf_thread_pool_runner_windows_adapter
-#else
-#define THREAD_FN vmaf_thread_pool_runner
-#endif
-
 int vmaf_thread_pool_create(VmafThreadPool **pool, unsigned n_threads)
 {
     if (!pool) return -EINVAL;
@@ -118,7 +108,7 @@ int vmaf_thread_pool_create(VmafThreadPool **pool, unsigned n_threads)
 
     for (unsigned i = 0; i < n_threads; i++) {
         pthread_t thread;
-        pthread_create(&thread, NULL, THREAD_FN, p);
+        pthread_create(&thread, NULL, vmaf_thread_pool_runner, p);
         pthread_detach(thread);
     }
 
