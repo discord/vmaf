@@ -97,6 +97,7 @@ int pthread_create(pthread_t* thread, void* mustBeUnused, void* (*startFn)(void*
         return EINVAL;
     }
     HANDLE handle = (HANDLE)(ret);
+    (void)SetThreadPriority(handle, THREAD_PRIORITY_BELOW_NORMAL);
     // If the return value of ResumeThread is 1, the specified thread was suspended but was restarted. 
     if (ResumeThread(handle) != 1) {
         // ... so, since the thread was started suspended, it should be started, and any other return value is a failure
