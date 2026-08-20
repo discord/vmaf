@@ -128,6 +128,98 @@ static FORCE_INLINE __m256i avx2_integer_fma(__m256i a, __m256i b, __m256i c) {
 	return _mm256_add_epi64(a, _mm256_mul_epu32(b, c));
 }
 
+#define DOUBLE_MAGIC_EPI64 _mm256_set1_epi64x(0x4330000000000000)
+
+// Trick adapted from https://stackoverflow.com/a/58827596
+// Requires 0 < temp < 2^31
+static FORCE_INLINE __m256i log2_index_32_256(__m256i temp, __m256i *k)
+{
+	__m256i v = _mm256_andnot_si256(_mm256_srli_epi32(temp, 8), temp);
+	v = _mm256_srli_epi32(_mm256_castps_si256(_mm256_cvtepi32_ps(v)), 23);
+	*k = _mm256_sub_epi32(v, _mm256_set1_epi32(142));
+	return _mm256_srlv_epi32(temp, *k);
+}
+
+// Requires 0 < temp < 2^52
+static FORCE_INLINE __m256i log2_index_64_256(__m256i temp, __m256i *k)
+{
+	const __m256i magic = DOUBLE_MAGIC_EPI64;
+	__m256d v = _mm256_sub_pd(_mm256_castsi256_pd(_mm256_or_si256(temp, magic)),
+		_mm256_castsi256_pd(magic));
+	__m256i e = _mm256_srli_epi64(_mm256_castpd_si256(v), 52);
+	*k = _mm256_sub_epi64(e, _mm256_set1_epi64x(1038));
+	return _mm256_srlv_epi64(temp, *k);
+}
+
+static FORCE_INLINE __m256i log2_table_gather_256(const uint16_t *log2_table, __m256i index, __m256i mask)
+{
+	__m256i v = _mm256_mask_i32gather_epi32(_mm256_setzero_si256(),
+		(const int*)log2_table, index, mask, 2);
+	return _mm256_and_si256(v, _mm256_set1_epi32(0xFFFF));
+}
+
+// Requires 0 <= trunc(x) < 2^52
+static FORCE_INLINE __m256i cvttpd_epi64_256(__m256d x)
+{
+	const __m256i magic = DOUBLE_MAGIC_EPI64;
+	__m256d t = _mm256_round_pd(x, _MM_FROUND_TO_ZERO | _MM_FROUND_NO_EXC);
+	return _mm256_sub_epi64(_mm256_castpd_si256(_mm256_add_pd(t, _mm256_castsi256_pd(magic))), magic);
+}
+
+// Truncate four 64-bit lanes to the low 128 bits as four 32-bit lanes
+static FORCE_INLINE __m128i narrow_epi64_epi32_256(__m256i x)
+{
+	return _mm256_castsi256_si128(_mm256_permute4x64_epi64(_mm256_shuffle_epi32(x, 0x08), 0x08));
+}
+
+static FORCE_INLINE __m256i join_si128(__m128i lo, __m128i hi)
+{
+	return _mm256_inserti128_si256(_mm256_castsi128_si256(lo), hi, 1);
+}
+
+// [ 0LL, 1LL, 2LL, 3LL ], [ 4LL, 5LL, 6LL, 7LL ]
+// ->
+// [ 0, 1, 2, 3, 4, 5, 6, 7 ]
+static __m256i downconvert_64_to_32(__m256i low, __m256i high) {
+	const __m256i Even = _mm256_setr_epi32(0, 2, 4, 6, 0, 2, 4, 6);
+
+	low = _mm256_permutevar8x32_epi32(low, Even);
+	high = _mm256_permutevar8x32_epi32(high, Even);
+
+	return _mm256_blend_epi32(low, high, 0xF0);
+}
+
+
+static FORCE_INLINE int64_t hsum_epi64_256(__m256i v)
+{
+	int64_t t[4];
+	_mm256_storeu_si256((__m256i*)t, v);
+	return t[0] + t[1] + t[2] + t[3];
+}
+
+static FORCE_INLINE int64_t hsum_epi32_256(__m256i v)
+{
+	return hsum_epi64_256(_mm256_add_epi64(
+		_mm256_cvtepi32_epi64(_mm256_castsi256_si128(v)),
+		_mm256_cvtepi32_epi64(_mm256_extracti128_si256(v, 1))));
+}
+
+static FORCE_INLINE __m128i vif_num_terms(__m128i sigma1_sq, __m128i sigma2_sq, __m128i sigma12,
+	double vif_enhn_gain_limit, __m256i *gg_sigma1_sq)
+{
+	__m256d s1 = _mm256_cvtepi32_pd(sigma1_sq);
+	__m256d s2 = _mm256_cvtepi32_pd(sigma2_sq);
+	__m256d s12 = _mm256_cvtepi32_pd(sigma12);
+
+	__m256d g = _mm256_div_pd(s12, _mm256_add_pd(s1, _mm256_set1_pd(65536 * 1.0e-10)));
+	__m128i sv_sq = _mm256_cvttpd_epi32(_mm256_sub_pd(s2, _mm256_mul_pd(g, s12)));
+
+	g = _mm256_min_pd(g, _mm256_set1_pd(vif_enhn_gain_limit));
+	*gg_sigma1_sq = cvttpd_epi64_256(_mm256_mul_pd(_mm256_mul_pd(g, g), s1));
+
+	return _mm_max_epi32(sv_sq, _mm_setzero_si128());
+}
+
 static FORCE_INLINE void vif_statistic_8_avx2_impl(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h, bool avx_ifma) {
 	__m256i (*FMA)(__m256i, __m256i, __m256i) = avx_ifma ? &ifma_integer_fma : &avx2_integer_fma;
 
@@ -249,6 +341,11 @@ static FORCE_INLINE void vif_statistic_8_avx2_impl(struct VifPublicState *s, flo
         PADDING_SQ_DATA(buf, w, fwidth / 2);
 
         //HORIZONTAL
+        __m256i accum_num_log_v = _mm256_setzero_si256();
+        __m256i accum_den_log_v = _mm256_setzero_si256();
+        __m256i accum_num_non_log_v = _mm256_setzero_si256();
+        __m256i accum_den_non_log_v = _mm256_setzero_si256();
+
         for (unsigned j = 0; j < n << 4; j += 16) {
             __m256i mu1_lo;
             __m256i mu1_hi;
@@ -495,51 +592,88 @@ static FORCE_INLINE void vif_statistic_8_avx2_impl(struct VifPublicState *s, flo
                 _mm256_storeu_si256((__m256i*) & xy[8], acc1);
             }
 
-            for (unsigned int b = 0; b < 16; b++) {
-                int32_t sigma1_sq = xx[b];
-                int32_t sigma2_sq = yy[b];
-                int32_t sigma12 = xy[b];
+            for (unsigned int b = 0; b < 16; b += 8) {
+                __m256i sigma1_sq = _mm256_load_si256((__m256i*) & xx[b]);
+                __m256i sigma2_sq = _mm256_load_si256((__m256i*) & yy[b]);
+                __m256i sigma12 = _mm256_load_si256((__m256i*) & xy[b]);
 
-                if (sigma1_sq >= sigma_nsq) {
-                    /**
-                    * log values are taken from the look-up table generated by
-                    * log_generate() function which is called in integer_combo_threadfunc
-                    * den_val in float is log2(1 + sigma1_sq/2)
-                    * here it is converted to equivalent of log2(2+sigma1_sq) - log2(2) i.e log2(2*65536+sigma1_sq) - 17
-                    * multiplied by 2048 as log_value = log2(i)*2048 i=16384 to 65535 generated using log_value
-                    * x because best 16 bits are taken
-                    */
-                    accum_den_log += log2_32(log2_table, sigma_nsq + sigma1_sq) - 2048 * 17;
+                // <-> if (sigma1_sq >= sigma_nsq)
+                __m256i hit = _mm256_cmpgt_epi32(sigma1_sq, _mm256_set1_epi32(sigma_nsq - 1));
 
-                    if (sigma12 > 0 && sigma2_sq > 0)
-                    {
-                        // num_val = log2f(1.0f + (g * g * sigma1_sq) / (sv_sq + sigma_nsq));
-                        /**
-                        * In floating-point numerator = log2((1.0f + (g * g * sigma1_sq)/(sv_sq + sigma_nsq))
-                        *
-                        * In Fixed-point the above is converted to
-                        * numerator = log2((sv_sq + sigma_nsq)+(g * g * sigma1_sq))- log2(sv_sq + sigma_nsq)
-                        */
+				/**
+				* log values are taken from the look-up table generated by
+				* log_generate() function which is called in integer_combo_threadfunc
+				* den_val in float is log2(1 + sigma1_sq/2)
+				* here it is converted to equivalent of log2(2+sigma1_sq) - log2(2) i.e log2(2*65536+sigma1_sq) - 17
+				* multiplied by 2048 as log_value = log2(i)*2048 i=16384 to 65535 generated using log_value
+				* x because best 16 bits are taken
+				*/
+                __m256i den_k;
+                __m256i den_index = log2_index_32_256(
+                    _mm256_add_epi32(sigma1_sq, _mm256_set1_epi32(sigma_nsq)), &den_k);
+                __m256i den_log = _mm256_sub_epi32(
+                    _mm256_add_epi32(log2_table_gather_256(log2_table, den_index, hit),
+                        _mm256_slli_epi32(den_k, 11)),
+                    _mm256_set1_epi32(2048 * 17));
+                accum_den_log_v = _mm256_add_epi32(accum_den_log_v, _mm256_and_si256(hit, den_log));
 
-                        const double eps = 65536 * 1.0e-10;
-                        double g = sigma12 / (sigma1_sq + eps); // this epsilon can go away
-                        int32_t sv_sq = sigma2_sq - g * sigma12;
+                __m256i num_non_log = _mm256_andnot_si256(hit, sigma2_sq);
+                accum_num_non_log_v = _mm256_add_epi64(accum_num_non_log_v,
+                    _mm256_add_epi64(_mm256_cvtepu32_epi64(_mm256_castsi256_si128(num_non_log)),
+                        _mm256_cvtepu32_epi64(_mm256_extracti128_si256(num_non_log, 1))));
+                accum_den_non_log_v = _mm256_add_epi32(accum_den_non_log_v,
+                    _mm256_andnot_si256(hit, _mm256_set1_epi32(1)));
 
-                        sv_sq = (uint32_t)(MAX(sv_sq, 0));
+				// <-> if (sigma12 > 0 && sigma2_sq > 0)
+                __m256i num_mask = _mm256_and_si256(hit,
+                    _mm256_and_si256(_mm256_cmpgt_epi32(sigma12, _mm256_setzero_si256()),
+                        _mm256_cmpgt_epi32(sigma2_sq, _mm256_setzero_si256())));
 
-                        g = MIN(g, vif_enhn_gain_limit);
+				// num_val = log2f(1.0f + (g * g * sigma1_sq) / (sv_sq + sigma_nsq));
+				/**
+				* In floating-point numerator = log2((1.0f + (g * g * sigma1_sq)/(sv_sq + sigma_nsq))
+				*
+				* In Fixed-point the above is converted to
+				* numerator = log2((sv_sq + sigma_nsq)+(g * g * sigma1_sq))- log2(sv_sq + sigma_nsq)
+				*/
 
-                        uint32_t numer1 = (sv_sq + sigma_nsq);
-                        int64_t numer1_tmp = (int64_t)((g * g * sigma1_sq)) + numer1; //numerator
-                        accum_num_log += log2_64(log2_table, numer1_tmp) - log2_64(log2_table, numer1);
-                    }
-                }
-                else {
-                    accum_num_non_log += sigma2_sq;
-                    accum_den_non_log++;
-                }
+                __m256i gg_sigma1_sq_lo, gg_sigma1_sq_hi;
+                __m128i sv_sq_lo = vif_num_terms(_mm256_castsi256_si128(sigma1_sq),
+                    _mm256_castsi256_si128(sigma2_sq), _mm256_castsi256_si128(sigma12),
+                    vif_enhn_gain_limit, &gg_sigma1_sq_lo);
+                __m128i sv_sq_hi = vif_num_terms(_mm256_extracti128_si256(sigma1_sq, 1),
+                    _mm256_extracti128_si256(sigma2_sq, 1), _mm256_extracti128_si256(sigma12, 1),
+                    vif_enhn_gain_limit, &gg_sigma1_sq_hi);
+
+                __m256i numer1 = _mm256_add_epi32(join_si128(sv_sq_lo, sv_sq_hi),
+                    _mm256_set1_epi32(sigma_nsq));
+
+                __m256i numer1_k;
+                __m256i numer1_index = log2_index_32_256(numer1, &numer1_k);
+
+                __m256i numer1_tmp_k_lo, numer1_tmp_k_hi;
+                __m256i numer1_tmp_index_lo = log2_index_64_256(_mm256_add_epi64(gg_sigma1_sq_lo,
+                    _mm256_cvtepu32_epi64(_mm256_castsi256_si128(numer1))), &numer1_tmp_k_lo);
+                __m256i numer1_tmp_index_hi = log2_index_64_256(_mm256_add_epi64(gg_sigma1_sq_hi,
+                    _mm256_cvtepu32_epi64(_mm256_extracti128_si256(numer1, 1))), &numer1_tmp_k_hi);
+
+                __m256i numer1_tmp_index = downconvert_64_to_32(numer1_tmp_index_lo, numer1_tmp_index_hi);
+                __m256i numer1_tmp_k = downconvert_64_to_32(numer1_tmp_k_lo, numer1_tmp_k_hi);
+
+                __m256i num_log = _mm256_sub_epi32(
+                    _mm256_add_epi32(log2_table_gather_256(log2_table, numer1_tmp_index, num_mask),
+                        _mm256_slli_epi32(numer1_tmp_k, 11)),
+                    _mm256_add_epi32(log2_table_gather_256(log2_table, numer1_index, num_mask),
+                        _mm256_slli_epi32(numer1_k, 11)));
+                accum_num_log_v = _mm256_add_epi32(accum_num_log_v, _mm256_and_si256(num_mask, num_log));
             }
         }
+
+        accum_num_log += hsum_epi32_256(accum_num_log_v);
+        accum_den_log += hsum_epi32_256(accum_den_log_v);
+        accum_num_non_log += hsum_epi64_256(accum_num_non_log_v);
+        accum_den_non_log += hsum_epi32_256(accum_den_non_log_v);
+
         if ((n << 4) != w) {
             VifResiduals residuals = vif_compute_line_residuals(s, n << 4, w, 0);
             accum_num_log += residuals.accum_num_log;
@@ -568,8 +702,6 @@ void vif_statistic_8_avx2_ifma(struct VifPublicState *s, float *num, float *den,
 }
 
 
-
-// See vif_statistic_8_avx2_impl for how avx_ifma is used.
 static FORCE_INLINE void vif_statistic_16_avx2_impl(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h, int bpc, int scale, bool avx_ifma) {
 	__m256i (*FMA)(__m256i, __m256i, __m256i) = avx_ifma ? &ifma_integer_fma : &avx2_integer_fma;
 
