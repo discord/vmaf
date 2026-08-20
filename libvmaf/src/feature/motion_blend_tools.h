@@ -25,7 +25,7 @@
 
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
-static FORCE_INLINE inline double motion_blend(double motion_score, double blend_factor, double blend_offset) {
+static FORCE_INLINE double motion_blend(double motion_score, double blend_factor, double blend_offset) {
     /* return a blended motion score */
     return motion_score * blend_factor + (1 - blend_factor) * MIN(blend_offset, motion_score);
 }

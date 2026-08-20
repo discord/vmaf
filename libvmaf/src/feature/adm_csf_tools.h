@@ -29,7 +29,7 @@
  * Image Quality Assessment by Separately Evaluating Detail Losses and Additive Impairments
  * Songnan Li, Fan Zhang, Lin Ma, King Ngi Ngan, IEEE Transactions on Multimedia 13(5):935-949
  */
-FORCE_INLINE inline float adm_native_csf(int lambda, double adm_norm_view_dist, int adm_ref_display_height,
+FORCE_INLINE float adm_native_csf(int lambda, double adm_norm_view_dist, int adm_ref_display_height,
                                          int theta)
 {
     /* This is the display visual resolution (DVR), in pixels/degree of visual angle. It should be ~56.55. */
