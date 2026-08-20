@@ -1357,14 +1357,33 @@ static inline uint16_t get_best15_from32(uint32_t temp, int *x)
 }
 
 // Trick adapted from https://stackoverflow.com/a/58827596
+// Additional requirement: sign bit of temp is never set and temp is nonzero
 static inline __m256i get_best15_from32_256(__m256i temp, __m256i* x)
 {
+	// Prevent incorrect rounding up from RNE
+	// The pathological case is when we have 24+ consecutive 1 bits
+	// at the start, so this clears enough of them
     __m256i v = _mm256_andnot_si256(_mm256_srli_epi32(temp, 8), temp);
-
     v = _mm256_castps_si256(_mm256_cvtepi32_ps(v));
+
+	// Extract FP exponent
     v = _mm256_srli_epi32(v, 23);
-    v = _mm256_subs_epu16(v, _mm256_set1_epi32(141));
-    *x = _mm256_min_epi16(v, _mm256_set1_epi32(17));
+	// Example: clz(0xfffff) is 12, biased exponent is 146, we want
+	// k = 17 - 12 = 5, so we subtract 141.
+	__m256i k = _mm256_sub_epi32(v, _mm256_set1_epi32(141));
+	*x = k;
+
+	// we recast the rounding
+	//    temp = (temp + (1 << (k - 1))) >> k
+	// as
+	//    ((temp >> (k - 1)) + 1) >> 1
+	// hence we want a variable right shift of k - 1.
+	
+	const __m256i Ones = _mm256_set1_epi32(1);
+	__m256i shifted = _mm256_srlv_epi32(temp, _mm256_sub_epi32(k, Ones));
+	shifted = _mm256_add_epi32(shifted, Ones);
+	shifted = _mm256_srli_epi32(shifted, 1);
+	return shifted;
 }
 
 static inline __m256i blend(__m256i a, __m256i b, __m256i mask)
@@ -1515,56 +1534,26 @@ void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride,
             __m256i kv_sign_epi32 = _mm256_or_si256(_mm256_cmpgt_epi32(_mm256_setzero_si256(), ov_epi32), const_1_epi32);
             __m256i kd_sign_epi32 = _mm256_or_si256(_mm256_cmpgt_epi32(_mm256_setzero_si256(), od_epi32), const_1_epi32);
 
-            // get_best15_from32 uses builtin_clz, which has not SIMD equivalent. We convert to scalar for the clz
-            uint16_t tmp_kh_msb[8], tmp_kv_msb[8], tmp_kd_msb[8];
-            int32_t tmp_kh_shift[8], tmp_kv_shift[8], tmp_kd_shift[8];
-
-            tmp_kh_msb[0] = get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 0), &tmp_kh_shift[0]);
-            tmp_kh_msb[1] = get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 1), &tmp_kh_shift[1]);
-            tmp_kh_msb[2] = get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 2), &tmp_kh_shift[2]);
-            tmp_kh_msb[3] = get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 3), &tmp_kh_shift[3]);
-            tmp_kh_msb[4] = get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 4), &tmp_kh_shift[4]);
-            tmp_kh_msb[5] = get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 5), &tmp_kh_shift[5]);
-            tmp_kh_msb[6] = get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 6), &tmp_kh_shift[6]);
-            tmp_kh_msb[7] = get_best15_from32(_mm256_extract_epi32(abs_oh_epi32, 7), &tmp_kh_shift[7]);
-
-            // convert from scalar back to vector
-            __m256i kh_shift_epi32 = _mm256_setr_epi32(tmp_kh_shift[0], tmp_kh_shift[1], tmp_kh_shift[2], tmp_kh_shift[3], tmp_kh_shift[4], tmp_kh_shift[5], tmp_kh_shift[6], tmp_kh_shift[7]);
-            __m256i tmp_kh_msb_epi32 = _mm256_setr_epi32(tmp_kh_msb[0], tmp_kh_msb[1], tmp_kh_msb[2], tmp_kh_msb[3], tmp_kh_msb[4], tmp_kh_msb[5], tmp_kh_msb[6], tmp_kh_msb[7]);
-
+			__m256i kh_shift_epi32;
+			__m256i tmp_kh_msb_epi32 = get_best15_from32_256(abs_oh_epi32, &kh_shift_epi32);
             __m256i mask_kh_msb_epi32 = _mm256_cmpgt_epi32(const_32768_epi32, abs_oh_epi32);
+
             // Where abs_oh < 32768, scalar uses oh directly (signed); the AVX-512
             // path here blends abs_oh_epi32. AVX2 previously blended const_32768,
             // producing small float-feature drift visible on 10-bit content.
             __m256i kh_msb_epi32 = blend(abs_oh_epi32, tmp_kh_msb_epi32, mask_kh_msb_epi32);
             kh_shift_epi32 = blend(_mm256_setzero_si256(), kh_shift_epi32, mask_kh_msb_epi32);
 
-            tmp_kv_msb[0] = get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 0), &tmp_kv_shift[0]);
-            tmp_kv_msb[1] = get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 1), &tmp_kv_shift[1]);
-            tmp_kv_msb[2] = get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 2), &tmp_kv_shift[2]);
-            tmp_kv_msb[3] = get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 3), &tmp_kv_shift[3]);
-            tmp_kv_msb[4] = get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 4), &tmp_kv_shift[4]);
-            tmp_kv_msb[5] = get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 5), &tmp_kv_shift[5]);
-            tmp_kv_msb[6] = get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 6), &tmp_kv_shift[6]);
-            tmp_kv_msb[7] = get_best15_from32(_mm256_extract_epi32(abs_ov_epi32, 7), &tmp_kv_shift[7]);
+			__m256i kv_shift_epi32;
+			__m256i tmp_kv_msb_epi32 = get_best15_from32_256(abs_ov_epi32, &kv_shift_epi32);
 
-            __m256i kv_shift_epi32 = _mm256_setr_epi32(tmp_kv_shift[0], tmp_kv_shift[1], tmp_kv_shift[2], tmp_kv_shift[3], tmp_kv_shift[4], tmp_kv_shift[5], tmp_kv_shift[6], tmp_kv_shift[7]);
-            __m256i tmp_kv_msb_epi32 = _mm256_setr_epi32(tmp_kv_msb[0], tmp_kv_msb[1], tmp_kv_msb[2], tmp_kv_msb[3], tmp_kv_msb[4], tmp_kv_msb[5], tmp_kv_msb[6], tmp_kv_msb[7]);
             __m256i mask_kv_msb_epi32 = _mm256_cmpgt_epi32(const_32768_epi32, abs_ov_epi32);
             __m256i kv_msb_epi32 = blend(abs_ov_epi32, tmp_kv_msb_epi32, mask_kv_msb_epi32);
             kv_shift_epi32 = blend(_mm256_setzero_si256(), kv_shift_epi32, mask_kv_msb_epi32);
 
-            tmp_kd_msb[0] = get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 0), &tmp_kd_shift[0]);
-            tmp_kd_msb[1] = get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 1), &tmp_kd_shift[1]);
-            tmp_kd_msb[2] = get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 2), &tmp_kd_shift[2]);
-            tmp_kd_msb[3] = get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 3), &tmp_kd_shift[3]);
-            tmp_kd_msb[4] = get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 4), &tmp_kd_shift[4]);
-            tmp_kd_msb[5] = get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 5), &tmp_kd_shift[5]);
-            tmp_kd_msb[6] = get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 6), &tmp_kd_shift[6]);
-            tmp_kd_msb[7] = get_best15_from32(_mm256_extract_epi32(abs_od_epi32, 7), &tmp_kd_shift[7]);
+			__m256i kd_shift_epi32;
+			__m256i tmp_kd_msb_epi32 = get_best15_from32_256(abs_od_epi32, &kd_shift_epi32);
 
-            __m256i kd_shift_epi32 = _mm256_setr_epi32(tmp_kd_shift[0], tmp_kd_shift[1], tmp_kd_shift[2], tmp_kd_shift[3], tmp_kd_shift[4], tmp_kd_shift[5], tmp_kd_shift[6], tmp_kd_shift[7]);
-            __m256i tmp_kd_msb_epi32 = _mm256_setr_epi32(tmp_kd_msb[0], tmp_kd_msb[1], tmp_kd_msb[2], tmp_kd_msb[3], tmp_kd_msb[4], tmp_kd_msb[5], tmp_kd_msb[6], tmp_kd_msb[7]);
             __m256i mask_kd_msb_epi32 = _mm256_cmpgt_epi32(const_32768_epi32, abs_od_epi32);
             __m256i kd_msb_epi32 = blend(abs_od_epi32, tmp_kd_msb_epi32, mask_kd_msb_epi32);
             kd_shift_epi32 = blend(_mm256_setzero_si256(), kd_shift_epi32, mask_kd_msb_epi32);
