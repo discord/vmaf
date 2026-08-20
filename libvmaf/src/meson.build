@@ -307,7 +307,7 @@ if is_asm_enabled
           'x86_avx2',
           x86_avx2_sources,
           include_directories : vmaf_base_include,
-          c_args : ['-mavx', '-mavx2', '-mfma'] + vmaf_cflags_common,
+          c_args : ['-mavx', '-mavx2', '-mfma', '-mavxifma'] + vmaf_cflags_common,
       )
 
       platform_specific_cpu_objects += x86_avx2_static_lib.extract_all_objects(recursive: true)

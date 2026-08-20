@@ -34,4 +34,9 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
 
 void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h, int bpc, int scale);
 
+// Optimized versions additionally using AVX-IFMA
+void vif_statistic_8_avx2_ifma(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h);
+
+void vif_statistic_16_avx2_ifma(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h, int bpc, int scale);
+
 #endif /* X86_AVX2_VIF_H_ */

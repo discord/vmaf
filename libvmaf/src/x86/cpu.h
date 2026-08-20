@@ -26,6 +26,7 @@ enum VmafCpuFlags {
     VMAF_X86_CPU_FLAG_AVX2 = 1 << 3,
     VMAF_X86_CPU_FLAG_AVX512 = 1 << 4,
     VMAF_X86_CPU_FLAG_AVX512ICL = 1 << 5,
+    VMAF_X86_CPU_FLAG_AVXIFMA = 1 << 6,
 };
 
 unsigned vmaf_get_cpu_flags_x86(void);

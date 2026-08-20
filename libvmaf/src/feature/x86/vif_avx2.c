@@ -134,10 +134,7 @@ acc_right = _mm256_madd_epi16(_mm256_unpackhi_epi16(r0, zero), f); \
 				}
 
 
-void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h) {
-	// TODO: Gate on CPUID
-	bool avx_ifma = true;
-
+static FORCE_INLINE void vif_statistic_8_avx2_impl(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h, bool avx_ifma) {
     assert(vif_filter1d_width[0] == 17);
     static const unsigned fwidth = 17;
     const uint16_t *vif_filt_s0 = vif_filter1d_table[0];
@@ -582,10 +579,16 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
 
 }
 
-void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h, int bpc, int scale) {
-	// TODO: Gate on CPUID
-	bool avx_ifma = true;
+void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h) {
+    vif_statistic_8_avx2_impl(s, num, den, w, h, false);
+}
 
+void vif_statistic_8_avx2_ifma(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h) {
+    vif_statistic_8_avx2_impl(s, num, den, w, h, true);
+}
+
+// See vif_statistic_8_avx2_impl for how avx_ifma is used.
+static FORCE_INLINE void vif_statistic_16_avx2_impl(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h, int bpc, int scale, bool avx_ifma) {
     const unsigned fwidth = vif_filter1d_width[scale];
     const uint16_t *vif_filt = vif_filter1d_table[scale];
     VifBuffer buf = s->buf;
@@ -1137,6 +1140,14 @@ void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, uns
 
     num[0] = accum_num_log / 2048.0 + (accum_den_non_log - ((accum_num_non_log) / 16384.0) / (65025.0));
     den[0] = accum_den_log / 2048.0 + accum_den_non_log;
+}
+
+void vif_statistic_16_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h, int bpc, int scale) {
+    vif_statistic_16_avx2_impl(s, num, den, w, h, bpc, scale, false);
+}
+
+void vif_statistic_16_avx2_ifma(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h, int bpc, int scale) {
+    vif_statistic_16_avx2_impl(s, num, den, w, h, bpc, scale, true);
 }
 
 void vif_subsample_rd_8_avx2(VifBuffer buf, unsigned w, unsigned h) {
