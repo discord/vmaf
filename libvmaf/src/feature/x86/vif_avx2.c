@@ -122,6 +122,9 @@ acc_right = _mm256_madd_epi16(_mm256_unpackhi_epi16(r0, zero), f); \
 
 
 void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsigned w, unsigned h) {
+	// TODO: Gate on CPUID
+	bool avx_ifma = true;
+
     assert(vif_filter1d_width[0] == 17);
     static const unsigned fwidth = 17;
     const uint16_t *vif_filt_s0 = vif_filter1d_table[0];
@@ -239,6 +242,19 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
 
         PADDING_SQ_DATA(buf, w, fwidth / 2);
 
+		// FMA(a, b, c) performs the operation a + b * c where a is uint64 and b,c are uint32
+		// The helper macros allow us to gate the avx-ifma functionality based on whether the
+		// processor supports it.
+
+#define IFMA_INTEGER_FMA(a, b, c) _mm256_madd52lo_avx_epu64(a, b, c)
+#define AVX2_INTEGER_FMA(a, b, c) _mm256_add_epi64(a, _mm256_mul_epu32(b, c))
+#define GENERATE_IFMA_IMPLS \
+				if (avx_ifma) { \
+					IMPL(IFMA_INTEGER_FMA) \
+				} else { \
+					IMPL(AVX2_INTEGER_FMA) \
+				}
+
         //HORIZONTAL
         for (unsigned j = 0; j < n << 4; j += 16) {
             __m256i mu1_lo;
@@ -346,27 +362,34 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
                 __m256i m0 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j + 0));
                 __m256i m1 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j + 8));
 
-                __m256i acc0 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq));
-                __m256i acc1 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq));
-                __m256i acc2 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq));
-                __m256i acc3 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq));
-                for (unsigned fj = 0; fj < fwidth / 2; ++fj) {
-                    __m256i fq = _mm256_set1_epi64x(vif_filt_s0[fj]);
-                    __m256i m0 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j - fwidth / 2 + fj + 0));
-                    __m256i m1 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j - fwidth / 2 + fj + 8));
-                    __m256i m2 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j + fwidth / 2 - fj + 0));
-                    __m256i m3 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j + fwidth / 2 - fj + 8));
+				__m256i acc0, acc1, acc2, acc3;
 
-                    acc0 = _mm256_add_epi64(acc0, _mm256_mul_epu32(_mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq));
-                    acc1 = _mm256_add_epi64(acc1, _mm256_mul_epu32(_mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq));
-                    acc2 = _mm256_add_epi64(acc2, _mm256_mul_epu32(_mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq));
-                    acc3 = _mm256_add_epi64(acc3, _mm256_mul_epu32(_mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq));
-
-                    acc0 = _mm256_add_epi64(acc0, _mm256_mul_epu32(_mm256_unpacklo_epi32(m2, _mm256_setzero_si256()), fq));
-                    acc1 = _mm256_add_epi64(acc1, _mm256_mul_epu32(_mm256_unpackhi_epi32(m2, _mm256_setzero_si256()), fq));
-                    acc2 = _mm256_add_epi64(acc2, _mm256_mul_epu32(_mm256_unpacklo_epi32(m3, _mm256_setzero_si256()), fq));
-                    acc3 = _mm256_add_epi64(acc3, _mm256_mul_epu32(_mm256_unpackhi_epi32(m3, _mm256_setzero_si256()), fq));
+#define IMPL(FMA) \
+                acc0 = FMA(rounder, _mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq); \
+                acc1 = FMA(rounder, _mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq); \
+                acc2 = FMA(rounder, _mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq); \
+                acc3 = FMA(rounder, _mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq); \
+                for (unsigned fj = 0; fj < fwidth / 2; ++fj) { \
+                    __m256i fq = _mm256_set1_epi64x(vif_filt_s0[fj]);\
+                    __m256i m0 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j - fwidth / 2 + fj + 0)); \
+                    __m256i m1 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j - fwidth / 2 + fj + 8)); \
+                    __m256i m2 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j + fwidth / 2 - fj + 0)); \
+                    __m256i m3 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref + j + fwidth / 2 - fj + 8)); \
+					\
+                    acc0 = FMA(acc0, _mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq);  \
+                    acc1 = FMA(acc1, _mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq); \
+                    acc2 = FMA(acc2, _mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq); \
+                    acc3 = FMA(acc3, _mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq); \
+\
+                    acc0 = FMA(acc0, _mm256_unpacklo_epi32(m2, _mm256_setzero_si256()), fq); \
+                    acc1 = FMA(acc1, _mm256_unpackhi_epi32(m2, _mm256_setzero_si256()), fq); \
+                    acc2 = FMA(acc2, _mm256_unpacklo_epi32(m3, _mm256_setzero_si256()), fq); \
+                    acc3 = FMA(acc3, _mm256_unpackhi_epi32(m3, _mm256_setzero_si256()), fq); \
                 }
+
+				GENERATE_IFMA_IMPLS
+#undef IMPL
+
                 acc0 = _mm256_srli_epi64(acc0, 16);
                 acc1 = _mm256_srli_epi64(acc1, 16);
                 acc2 = _mm256_srli_epi64(acc2, 16);
@@ -393,28 +416,34 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
 
                 __m256i m0 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j + 0));
                 __m256i m1 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j + 8));
+				__m256i acc0, acc1, acc2, acc3;
 
-                __m256i acc0 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq));
-                __m256i acc1 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq));
-                __m256i acc2 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq));
-                __m256i acc3 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq));
-                for (unsigned fj = 0; fj < fwidth / 2; ++fj) {
-                    __m256i fq = _mm256_set1_epi64x(vif_filt_s0[fj]);
-                    __m256i m0 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j - fwidth / 2 + fj + 0));
-                    __m256i m1 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j - fwidth / 2 + fj + 8));
-                    __m256i m2 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j + fwidth / 2 - fj + 0));
-                    __m256i m3 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j + fwidth / 2 - fj + 8));
-
-                    acc0 = _mm256_add_epi64(acc0, _mm256_mul_epu32(_mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq));
-                    acc1 = _mm256_add_epi64(acc1, _mm256_mul_epu32(_mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq));
-                    acc2 = _mm256_add_epi64(acc2, _mm256_mul_epu32(_mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq));
-                    acc3 = _mm256_add_epi64(acc3, _mm256_mul_epu32(_mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq));
-
-                    acc0 = _mm256_add_epi64(acc0, _mm256_mul_epu32(_mm256_unpacklo_epi32(m2, _mm256_setzero_si256()), fq));
-                    acc1 = _mm256_add_epi64(acc1, _mm256_mul_epu32(_mm256_unpackhi_epi32(m2, _mm256_setzero_si256()), fq));
-                    acc2 = _mm256_add_epi64(acc2, _mm256_mul_epu32(_mm256_unpacklo_epi32(m3, _mm256_setzero_si256()), fq));
-                    acc3 = _mm256_add_epi64(acc3, _mm256_mul_epu32(_mm256_unpackhi_epi32(m3, _mm256_setzero_si256()), fq));
+#define IMPL(FMA) \
+                acc0 = FMA(rounder, _mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq); \
+                acc1 = FMA(rounder, _mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq); \
+                acc2 = FMA(rounder, _mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq); \
+                acc3 = FMA(rounder, _mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq); \
+                for (unsigned fj = 0; fj < fwidth / 2; ++fj) { \
+                    __m256i fq = _mm256_set1_epi64x(vif_filt_s0[fj]); \
+                    __m256i m0 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j - fwidth / 2 + fj + 0)); \
+                    __m256i m1 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j - fwidth / 2 + fj + 8)); \
+                    __m256i m2 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j + fwidth / 2 - fj + 0)); \
+                    __m256i m3 = _mm256_loadu_si256((__m256i*)(buf.tmp.dis + j + fwidth / 2 - fj + 8)); \
+ \
+                    acc0 = FMA(acc0, _mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq); \
+                    acc1 = FMA(acc1, _mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq); \
+                    acc2 = FMA(acc2, _mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq); \
+                    acc3 = FMA(acc3, _mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq); \
+ \
+                    acc0 = FMA(acc0, _mm256_unpacklo_epi32(m2, _mm256_setzero_si256()), fq); \
+                    acc1 = FMA(acc1, _mm256_unpackhi_epi32(m2, _mm256_setzero_si256()), fq); \
+                    acc2 = FMA(acc2, _mm256_unpacklo_epi32(m3, _mm256_setzero_si256()), fq); \
+                    acc3 = FMA(acc3, _mm256_unpackhi_epi32(m3, _mm256_setzero_si256()), fq); \
                 }
+
+				GENERATE_IFMA_IMPLS
+#undef IMPL
+
                 acc0 = _mm256_srli_epi64(acc0, 16);
                 acc1 = _mm256_srli_epi64(acc1, 16);
                 acc2 = _mm256_srli_epi64(acc2, 16);
@@ -441,28 +470,35 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
 
                 __m256i m0 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j + 0));
                 __m256i m1 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j + 8));
+				
+				__m256i acc0, acc1, acc2, acc3;
 
-                __m256i acc0 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq));
-                __m256i acc1 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq));
-                __m256i acc2 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq));
-                __m256i acc3 = _mm256_add_epi64(rounder, _mm256_mul_epu32(_mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq));
-                for (unsigned fj = 0; fj < fwidth / 2; ++fj) {
-                    __m256i fq = _mm256_set1_epi64x(vif_filt_s0[fj]);
-                    __m256i m0 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j - fwidth / 2 + fj + 0));
-                    __m256i m1 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j - fwidth / 2 + fj + 8));
-                    __m256i m2 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j + fwidth / 2 - fj + 0));
-                    __m256i m3 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j + fwidth / 2 - fj + 8));
-
-                    acc0 = _mm256_add_epi64(acc0, _mm256_mul_epu32(_mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq));
-                    acc1 = _mm256_add_epi64(acc1, _mm256_mul_epu32(_mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq));
-                    acc2 = _mm256_add_epi64(acc2, _mm256_mul_epu32(_mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq));
-                    acc3 = _mm256_add_epi64(acc3, _mm256_mul_epu32(_mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq));
-
-                    acc0 = _mm256_add_epi64(acc0, _mm256_mul_epu32(_mm256_unpacklo_epi32(m2, _mm256_setzero_si256()), fq));
-                    acc1 = _mm256_add_epi64(acc1, _mm256_mul_epu32(_mm256_unpackhi_epi32(m2, _mm256_setzero_si256()), fq));
-                    acc2 = _mm256_add_epi64(acc2, _mm256_mul_epu32(_mm256_unpacklo_epi32(m3, _mm256_setzero_si256()), fq));
-                    acc3 = _mm256_add_epi64(acc3, _mm256_mul_epu32(_mm256_unpackhi_epi32(m3, _mm256_setzero_si256()), fq));
+#define IMPL(FMA) \
+                acc0 = FMA(rounder, _mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq); \
+                acc1 = FMA(rounder, _mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq); \
+                acc2 = FMA(rounder, _mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq); \
+                acc3 = FMA(rounder, _mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq); \
+                for (unsigned fj = 0; fj < fwidth / 2; ++fj) { \
+                    __m256i fq = _mm256_set1_epi64x(vif_filt_s0[fj]); \
+                    __m256i m0 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j - fwidth / 2 + fj + 0)); \
+                    __m256i m1 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j - fwidth / 2 + fj + 8)); \
+                    __m256i m2 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j + fwidth / 2 - fj + 0)); \
+                    __m256i m3 = _mm256_loadu_si256((__m256i*)(buf.tmp.ref_dis + j + fwidth / 2 - fj + 8)); \
+ \
+                    acc0 = FMA(acc0, _mm256_unpacklo_epi32(m0, _mm256_setzero_si256()), fq); \
+                    acc1 = FMA(acc1, _mm256_unpackhi_epi32(m0, _mm256_setzero_si256()), fq); \
+                    acc2 = FMA(acc2, _mm256_unpacklo_epi32(m1, _mm256_setzero_si256()), fq); \
+                    acc3 = FMA(acc3, _mm256_unpackhi_epi32(m1, _mm256_setzero_si256()), fq); \
+ \
+                    acc0 = FMA(acc0, _mm256_unpacklo_epi32(m2, _mm256_setzero_si256()), fq); \
+                    acc1 = FMA(acc1, _mm256_unpackhi_epi32(m2, _mm256_setzero_si256()), fq); \
+                    acc2 = FMA(acc2, _mm256_unpacklo_epi32(m3, _mm256_setzero_si256()), fq); \
+                    acc3 = FMA(acc3, _mm256_unpackhi_epi32(m3, _mm256_setzero_si256()), fq); \
                 }
+
+				GENERATE_IFMA_IMPLS
+#undef IMPL
+
                 acc0 = _mm256_srli_epi64(acc0, 16);
                 acc1 = _mm256_srli_epi64(acc1, 16);
                 acc2 = _mm256_srli_epi64(acc2, 16);
