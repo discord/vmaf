@@ -731,18 +731,33 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride,
             __m256i ot_dp_256 = _mm256_madd_epi16(oh_ov, th_tv);
             __m256i t_mag_sq_256 = _mm256_madd_epi16(th_tv, th_tv);
 
-            int angle_flag_r[8];
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 0), _mm256_extract_epi32(o_mag_sq_256, 0), _mm256_extract_epi32(t_mag_sq_256, 0), angle_flag_r[0]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 1), _mm256_extract_epi32(o_mag_sq_256, 1), _mm256_extract_epi32(t_mag_sq_256, 1), angle_flag_r[1]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 2), _mm256_extract_epi32(o_mag_sq_256, 2), _mm256_extract_epi32(t_mag_sq_256, 2), angle_flag_r[2]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 3), _mm256_extract_epi32(o_mag_sq_256, 3), _mm256_extract_epi32(t_mag_sq_256, 3), angle_flag_r[3]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 4), _mm256_extract_epi32(o_mag_sq_256, 4), _mm256_extract_epi32(t_mag_sq_256, 4), angle_flag_r[4]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 5), _mm256_extract_epi32(o_mag_sq_256, 5), _mm256_extract_epi32(t_mag_sq_256, 5), angle_flag_r[5]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 6), _mm256_extract_epi32(o_mag_sq_256, 6), _mm256_extract_epi32(t_mag_sq_256, 6), angle_flag_r[6]);
-            calc_angle(_mm256_extract_epi32(ot_dp_256, 7), _mm256_extract_epi32(o_mag_sq_256, 7), _mm256_extract_epi32(t_mag_sq_256, 7), angle_flag_r[7]);
+#define angle_second_256(ot_dp, o_mag_sq, t_mag_sq) _mm256_cmp_pd(_mm256_mul_pd(ot_dp, ot_dp), \
+		_mm256_mul_pd(_mm256_mul_pd(_mm256_set1_pd(cos_1deg_sq), o_mag_sq), \
+		t_mag_sq), 5)
 
-            __m256i angle_flag = _mm256_mullo_epi32(_mm256_setr_epi32(angle_flag_r[0], angle_flag_r[1], angle_flag_r[2], angle_flag_r[3], angle_flag_r[4], angle_flag_r[5], angle_flag_r[6], angle_flag_r[7]), _mm256_set1_epi32(-1));
+#define split_to_doubles(v) \
+	__m256 v##_tmp = _mm256_cvtepi32_ps(v); \
+	__m256d v##_lo = _mm256_cvtps_pd(_mm256_castps256_ps128(v##_tmp)); \
+	__m256d v##_hi = _mm256_cvtps_pd(_mm256_extractf128_ps(v##_tmp, 1)); \
 
+			split_to_doubles(o_mag_sq_256);
+			split_to_doubles(ot_dp_256);
+			split_to_doubles(t_mag_sq_256);
+
+			__m256i second_crit_lo = angle_second_256(ot_dp_256_lo, o_mag_sq_256_lo, t_mag_sq_256_lo);
+			__m256i second_crit_hi = angle_second_256(ot_dp_256_hi, o_mag_sq_256_hi, t_mag_sq_256_hi);
+
+
+#undef angle_second_256
+#undef split_to_doubles
+
+			__m256i second_crit = _mm256_permute4x64_epi64(_mm256_packs_epi32(second_crit_lo, second_crit_hi), 0xD8);
+
+			__m256i angle_flag = _mm256_cmpgt_epi32(_mm256_setzero_ps(), ot_dp_256);
+
+			angle_flag = _mm256_andnot_si256(angle_flag, second_crit);
+
+			
             __m256i const_32768_32b = _mm256_set1_epi32(32768);
             __m256i const_16384_64b = _mm256_set1_epi64x(16384);
 
@@ -1339,6 +1354,17 @@ static inline uint16_t get_best15_from32(uint32_t temp, int *x)
     temp = (temp + (1 << (k - 1))) >> k;
     *x = k;
     return temp;
+}
+
+// Trick adapted from https://stackoverflow.com/a/58827596
+static inline __m256i get_best15_from32_256(__m256i temp, __m256i* x)
+{
+    __m256i v = _mm256_andnot_si256(_mm256_srli_epi32(temp, 8), temp);
+
+    v = _mm256_castps_si256(_mm256_cvtepi32_ps(v));
+    v = _mm256_srli_epi32(v, 23);
+    v = _mm256_subs_epu16(v, _mm256_set1_epi32(141));
+    *x = _mm256_min_epi16(v, _mm256_set1_epi32(17));
 }
 
 static inline __m256i blend(__m256i a, __m256i b, __m256i mask)
