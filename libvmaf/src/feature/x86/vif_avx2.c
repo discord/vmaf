@@ -363,10 +363,10 @@ static FORCE_INLINE void vif_statistic_8_avx2_impl(struct VifPublicState *s, flo
                 mu1_hi = _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu1 + j + 8)), fq);
                 for (unsigned fj = 0; fj < fwidth / 2; ++fj) {
                     __m256i fq = _mm256_set1_epi32(vif_filt_s0[fj]);
-                    mu1_lo = _mm256_add_epi64(mu1_lo, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu1 + j - fwidth / 2 + fj + 0)), fq));
-                    mu1_hi = _mm256_add_epi64(mu1_hi, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu1 + j - fwidth / 2 + fj + 8)), fq));
-                    mu1_lo = _mm256_add_epi64(mu1_lo, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu1 + j + fwidth / 2 - fj + 0)), fq));
-                    mu1_hi = _mm256_add_epi64(mu1_hi, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu1 + j + fwidth / 2 - fj + 8)), fq));
+                    mu1_lo = _mm256_add_epi32(mu1_lo, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu1 + j - fwidth / 2 + fj + 0)), fq));
+                    mu1_hi = _mm256_add_epi32(mu1_hi, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu1 + j - fwidth / 2 + fj + 8)), fq));
+                    mu1_lo = _mm256_add_epi32(mu1_lo, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu1 + j + fwidth / 2 - fj + 0)), fq));
+                    mu1_hi = _mm256_add_epi32(mu1_hi, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu1 + j + fwidth / 2 - fj + 8)), fq));
                 }
 
                 __m256i acc0_lo = _mm256_unpacklo_epi32(mu1_lo, _mm256_setzero_si256());
@@ -397,10 +397,10 @@ static FORCE_INLINE void vif_statistic_8_avx2_impl(struct VifPublicState *s, flo
                 __m256i acc1 = _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu2 + j + 8)), fq);
                 for (unsigned fj = 0; fj < fwidth / 2; ++fj) {
                     __m256i fq = _mm256_set1_epi32(vif_filt_s0[fj]);
-                    acc0 = _mm256_add_epi64(acc0, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu2 + j - fwidth / 2 + fj + 0)), fq));
-                    acc1 = _mm256_add_epi64(acc1, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu2 + j - fwidth / 2 + fj + 8)), fq));
-                    acc0 = _mm256_add_epi64(acc0, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu2 + j + fwidth / 2 - fj + 0)), fq));
-                    acc1 = _mm256_add_epi64(acc1, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu2 + j + fwidth / 2 - fj + 8)), fq));
+                    acc0 = _mm256_add_epi32(acc0, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu2 + j - fwidth / 2 + fj + 0)), fq));
+                    acc1 = _mm256_add_epi32(acc1, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu2 + j - fwidth / 2 + fj + 8)), fq));
+                    acc0 = _mm256_add_epi32(acc0, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu2 + j + fwidth / 2 - fj + 0)), fq));
+                    acc1 = _mm256_add_epi32(acc1, _mm256_mullo_epi32(_mm256_loadu_si256((__m256i*)(buf.tmp.mu2 + j + fwidth / 2 - fj + 8)), fq));
                 }
 
                 __m256i acc0_lo = _mm256_unpacklo_epi32(acc0, _mm256_setzero_si256());
