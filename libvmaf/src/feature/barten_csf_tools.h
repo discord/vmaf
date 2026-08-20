@@ -77,7 +77,7 @@ static float barten_mtf(float spatial_frequency)
  * ACM Transactions on Graphics, Volume 30, Issue 4, July 2011, Article No.: 40, pp 1–14
  * Rafal Mantiuk, Kil Joong Kim, Allan G. Rempel, Wolfgang Heidrich
  */
-static FORCE_INLINE inline float barten_csf(int lambda, double adm_norm_view_dist,
+static FORCE_INLINE float barten_csf(int lambda, double adm_norm_view_dist,
                                             int adm_ref_display_height, double adm_csf_lum_level, double adm_csf_scale)
 {
     /* This is the display visual resolution (DVR), in pixels/degree of visual angle. It should be ~56.55. */
@@ -215,7 +215,7 @@ static const float BLENDED_CSF_480_5H_MAE[2][4] = {
  * CSF function with CSF bug fix
  * Uses the corrected L1 optimization 
  */
-static FORCE_INLINE inline float barten_watson_blend_csf_mae(int scale, int theta, double adm_norm_view_dist,
+static FORCE_INLINE float barten_watson_blend_csf_mae(int scale, int theta, double adm_norm_view_dist,
                                                                   int adm_ref_display_height) {
     if (adm_ref_display_height == 1080 && adm_norm_view_dist == 3.0) {
         return BLENDED_CSF_1080_3H_MAE[theta][scale];
@@ -245,7 +245,7 @@ static FORCE_INLINE inline float barten_watson_blend_csf_mae(int scale, int thet
  * Legacy Blended CSF function (backward compatibility)
  * Always uses legacy coefficients for existing models
  */
-static FORCE_INLINE inline float barten_watson_blend_csf(int scale, int theta, double adm_norm_view_dist,
+static FORCE_INLINE float barten_watson_blend_csf(int scale, int theta, double adm_norm_view_dist,
                                                          int adm_ref_display_height) {
     if (adm_ref_display_height == 1080 && adm_norm_view_dist == 3.0) {
         return BLENDED_CSF_1080_3H[theta][scale];
