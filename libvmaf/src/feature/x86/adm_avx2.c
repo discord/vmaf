@@ -1705,13 +1705,13 @@ void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride,
             // rst_h as int64 to int32 after conditionals
             __m256d rst_h_lo_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_h_f, 0));
             __m256d rst_h_hi_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_h_f, 1));
-            __m256i mask_gt_h_lo_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_gt_h_lo_epi64 = _mm256_andnot_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_h_lo_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_gt_h_hi_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_gt_h_hi_epi64 = _mm256_andnot_si256( _mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_h_hi_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_lt_h_lo_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_lt_h_lo_epi64 = _mm256_andnot_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_h_lo_d, const_0_pd, _CMP_LT_OS)));
-            __m256i mask_lt_h_hi_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_lt_h_hi_epi64 = _mm256_andnot_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_h_hi_d, const_0_pd, _CMP_LT_OS)));
             rst_h_lo_epi64 = blend(rst_h_min_lo_epi64, rst_h_lo_epi64, mask_gt_h_lo_epi64);
             rst_h_hi_epi64 = blend(rst_h_min_hi_epi64, rst_h_hi_epi64, mask_gt_h_hi_epi64);
@@ -1733,13 +1733,13 @@ void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride,
             // rst_v as int64 to int32 after conditionals
             __m256d rst_v_lo_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_v_f, 0));
             __m256d rst_v_hi_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_v_f, 1));
-            __m256i mask_gt_v_lo_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_gt_v_lo_epi64 = _mm256_andnot_si256( _mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_v_lo_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_gt_v_hi_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_gt_v_hi_epi64 = _mm256_andnot_si256( _mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_v_hi_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_lt_v_lo_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_lt_v_lo_epi64 = _mm256_andnot_si256( _mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_v_lo_d, const_0_pd, _CMP_LT_OS)));
-            __m256i mask_lt_v_hi_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_lt_v_hi_epi64 = _mm256_andnot_si256( _mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_v_hi_d, const_0_pd, _CMP_LT_OS)));
 
             rst_v_lo_epi64 = blend(rst_v_min_lo_epi64, rst_v_lo_epi64, mask_gt_v_lo_epi64);
@@ -1763,13 +1763,13 @@ void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride,
             // rst_d as int64 to int32 after conditionals
             __m256d rst_d_lo_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_d_f, 0));
             __m256d rst_d_hi_d = _mm256_cvtps_pd(_mm256_extractf128_ps(rst_d_f, 1));
-            __m256i mask_gt_d_lo_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_gt_d_lo_epi64 = _mm256_andnot_si256( _mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_d_lo_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_gt_d_hi_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_gt_d_hi_epi64 = _mm256_andnot_si256( _mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_d_hi_d, const_0_pd, _CMP_GT_OS)));
-            __m256i mask_lt_d_lo_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_lt_d_lo_epi64 = _mm256_andnot_si256( _mm256_cmpeq_epi64(angle_flag_lo_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_d_lo_d, const_0_pd, _CMP_LT_OS)));
-            __m256i mask_lt_d_hi_epi64 = _mm256_and_si256( _mm256_xor_si256(_mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64), _mm256_set1_epi64x(-1)), // bit flip for a cmp neq for angle_flag
+            __m256i mask_lt_d_hi_epi64 = _mm256_andnot_si256( _mm256_cmpeq_epi64(angle_flag_hi_epi64, const_0_epi64),
                                                            _mm256_castpd_si256(_mm256_cmp_pd(rst_d_hi_d, const_0_pd, _CMP_LT_OS)));
 
             rst_d_lo_epi64 = blend(rst_d_min_lo_epi64, rst_d_lo_epi64, mask_gt_d_lo_epi64);
