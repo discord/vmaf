@@ -1444,7 +1444,7 @@ static __m256i downconvert_64_to_32(__m256i low, __m256i high) {
 
 // Assumptions: v is in the valid int64 range
 // Credit: https://stackoverflow.com/a/41223013
-static __m256i double_to_64(__m256d v) {
+static FORCE_INLINE __m256i double_to_64(__m256d v) {
     __m256i v_lo         = _mm256_blend_epi32(_mm256_set1_epi64x(0x4330000000000000 /* 2**52 */), v, 0b01010101);
     __m256i v_hi         = _mm256_srli_epi64(v, 32);
 	v_hi         = _mm256_xor_si256(v_hi, _mm256_set1_epi64x(0x4530000080000000 /* 2**84 + 2**63 */));
@@ -1453,12 +1453,54 @@ static __m256i double_to_64(__m256d v) {
 	return _mm256_add_pd(v_hi_dbl, _mm256_castsi256_pd(v_lo));
 }
 
+// Convert int64s to double, rounding to odd in anticipation of converting to float
+// MXCSR must be set to round toward zero
+static FORCE_INLINE __m256d int64_to_double_rodd(__m256i v) {
+    __m256i magic_i_lo   = _mm256_set1_epi64x(0x4330000000000000);
+    __m256i magic_i_hi32 = _mm256_set1_epi64x(0x4530000080000000);
+    __m256i magic_i_all  = _mm256_set1_epi64x(0x4530000080100000);
+    __m256d magic_d_all  = _mm256_castsi256_pd(magic_i_all);
+    __m256i v_lo         = _mm256_blend_epi32(magic_i_lo, v, 0b01010101);
+    __m256i v_hi         = _mm256_srli_epi64(v, 32);
+            v_hi         = _mm256_xor_si256(v_hi, magic_i_hi32);
+
+    // This is exact
+    __m256d v_hi_dbl     = _mm256_sub_pd(_mm256_castsi256_pd(v_hi), magic_d_all);
+
+    // This must round toward zero
+    __m256d result       = _mm256_add_pd(v_hi_dbl, _mm256_castsi256_pd(v_lo));
+
+    // Compute whether there was any error
+    __m256d err = _mm256_cmp_pd(_mm256_castsi256_pd(v_lo), _mm256_sub_pd(result, v_hi_dbl), _CMP_NEQ_OQ);
+
+    // Round to odd
+    return _mm256_or_pd(result, _mm256_srli_epi64(err, 63));
+}
+
+// Round the double to the nearest float
+static FORCE_INLINE __m256d truncate_to_float(__m256d v) {
+	return _mm256_cvtps_pd(_mm256_cvtpd_ps(v));
+}
+
+const float cos_1deg_sq = 0.999695420265197754f;
+
+static FORCE_INLINE __m256i calc_angle_256(__m256d ot_dp, __m256d o_mag_sq, __m256d t_mag_sq) {
+	__m256i angle_flag = _mm256_cmp_pd(ot_dp, _mm256_setzero_pd(), 5 /* >= */);
+
+	ot_dp = truncate_to_float(ot_dp);
+	o_mag_sq = truncate_to_float(o_mag_sq);
+	t_mag_sq = truncate_to_float(t_mag_sq);
+
+	angle_flag = _mm256_and_si256(angle_flag, _mm256_cmp_pd(
+		_mm256_mul_pd(ot_dp, ot_dp),
+		_mm256_mul_pd(_mm256_set1_pd(cos_1deg_sq), _mm256_mul_pd(o_mag_sq, t_mag_sq)), 5));
+
+	return angle_flag;
+}
 
 void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride,
                               double adm_enhn_gain_limit, int32_t* adm_div_lookup)
 {
-    const float cos_1deg_sq = cos(1.0 * M_PI / 180.0) * cos(1.0 * M_PI / 180.0);
-
     const i4_adm_dwt_band_t *ref = &buf->i4_ref_dwt2;
     const i4_adm_dwt_band_t *dis = &buf->i4_dis_dwt2;
     const i4_adm_dwt_band_t *r = &buf->i4_decouple_r;
@@ -1494,6 +1536,9 @@ void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride,
     const __m256i const_16384_epi64 = _mm256_set1_epi64x(16384);
     const __m256i const_32768_epi32 = _mm256_set1_epi32(32768);
     const __m256i const_32768_epi64 = _mm256_set1_epi64x(32768);
+
+	int original_mxcsr = _mm_getcsr();
+	int mxcsr_rtz = original_mxcsr | _MM_ROUND_TOWARD_ZERO;
 
     for (int i = top; i < bottom; ++i)
     {
@@ -1535,18 +1580,19 @@ void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride,
             __m256i t_mag_sq_hi_epi64 = _mm256_add_epi64(_mm256_mul_epi32(th_hi_epi64, th_hi_epi64),
                                                       _mm256_mul_epi32(tv_hi_epi64, tv_hi_epi64));
 
-            // angle_flag as int64
-            int64_t angle_flag[8];
-            calc_angle(extract_epi64(ot_dp_lo_epi64, 0), extract_epi64(o_mag_sq_lo_epi64, 0), extract_epi64(t_mag_sq_lo_epi64, 0), angle_flag[0]);
-            calc_angle(extract_epi64(ot_dp_lo_epi64, 1), extract_epi64(o_mag_sq_lo_epi64, 1), extract_epi64(t_mag_sq_lo_epi64, 1), angle_flag[1]);
-            calc_angle(extract_epi64(ot_dp_lo_epi64, 2), extract_epi64(o_mag_sq_lo_epi64, 2), extract_epi64(t_mag_sq_lo_epi64, 2), angle_flag[2]);
-            calc_angle(extract_epi64(ot_dp_lo_epi64, 3), extract_epi64(o_mag_sq_lo_epi64, 3), extract_epi64(t_mag_sq_lo_epi64, 3), angle_flag[3]);
-            calc_angle(extract_epi64(ot_dp_hi_epi64, 0), extract_epi64(o_mag_sq_hi_epi64, 0), extract_epi64(t_mag_sq_hi_epi64, 0), angle_flag[4]);
-            calc_angle(extract_epi64(ot_dp_hi_epi64, 1), extract_epi64(o_mag_sq_hi_epi64, 1), extract_epi64(t_mag_sq_hi_epi64, 1), angle_flag[5]);
-            calc_angle(extract_epi64(ot_dp_hi_epi64, 2), extract_epi64(o_mag_sq_hi_epi64, 2), extract_epi64(t_mag_sq_hi_epi64, 2), angle_flag[6]);
-            calc_angle(extract_epi64(ot_dp_hi_epi64, 3), extract_epi64(o_mag_sq_hi_epi64, 3), extract_epi64(t_mag_sq_hi_epi64, 3), angle_flag[7]);
-            __m256i angle_flag_lo_epi64 = _mm256_loadu_si256((__m256i*) (&angle_flag[0]));
-            __m256i angle_flag_hi_epi64 = _mm256_loadu_si256((__m256i*) (&angle_flag[4]));
+            _mm_setcsr(mxcsr_rtz); // need RTZ for the below algorithm
+
+            __m256d ot_dp_lo_pd = int64_to_double_rodd(ot_dp_lo_epi64);
+            __m256d ot_dp_hi_pd = int64_to_double_rodd(ot_dp_hi_epi64);
+            __m256d o_mag_sq_lo_pd = int64_to_double_rodd(o_mag_sq_lo_epi64);
+            __m256d o_mag_sq_hi_pd = int64_to_double_rodd(o_mag_sq_hi_epi64);
+            __m256d t_mag_sq_lo_pd = int64_to_double_rodd(t_mag_sq_lo_epi64);
+            __m256d t_mag_sq_hi_pd = int64_to_double_rodd(t_mag_sq_hi_epi64);
+
+            _mm_setcsr(original_mxcsr);  // restore MXCSR
+            
+            __m256i angle_flag_lo_epi64 = calc_angle_256(ot_dp_lo_pd, o_mag_sq_lo_pd, t_mag_sq_lo_pd);
+            __m256i angle_flag_hi_epi64 = calc_angle_256(ot_dp_hi_pd, o_mag_sq_hi_pd, t_mag_sq_hi_pd);
 
             __m256i abs_oh_epi32 = _mm256_abs_epi32(oh_epi32);
             __m256i abs_ov_epi32 = _mm256_abs_epi32(ov_epi32);
