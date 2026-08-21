@@ -626,8 +626,7 @@ static FORCE_INLINE void vif_statistic_8_avx2_impl(struct VifPublicState *s, flo
 
 				// <-> if (sigma12 > 0 && sigma2_sq > 0)
                 __m256i num_mask = _mm256_and_si256(hit,
-                    _mm256_and_si256(_mm256_cmpgt_epi32(sigma12, _mm256_setzero_si256()),
-                        _mm256_cmpgt_epi32(sigma2_sq, _mm256_setzero_si256())));
+                    _mm256_cmpgt_epi32(_mm256_min_epi32(sigma12, sigma2_sq), _mm256_setzero_si256()));
 
 				// num_val = log2f(1.0f + (g * g * sigma1_sq) / (sv_sq + sigma_nsq));
 				/**
