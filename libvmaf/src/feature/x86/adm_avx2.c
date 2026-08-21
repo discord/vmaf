@@ -1368,7 +1368,7 @@ static inline __m256i get_best15_from32_256(__m256i temp, __m256i* x)
 
 static inline __m256i blend(__m256i a, __m256i b, __m256i mask)
 {
-    return _mm256_or_si256(_mm256_and_si256(mask, a), _mm256_andnot_si256(mask, b));
+    return _mm256_blendv_epi8(b, a, mask);
 }
 
 static inline __m256i sra_epi64(__m256i a, __m256i mask)
