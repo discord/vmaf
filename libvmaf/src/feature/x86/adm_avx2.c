@@ -667,9 +667,8 @@
                            add_shift_xcub, shift_xcub, accum_inner) \
 { \
     __m256i mask_x_ltz = _mm256_cmpgt_epi64(_mm256_setzero_si256(), x); \
-    __m256i x_us = _mm256_and_si256(_mm256_mul_epi32(x, _mm256_set1_epi32(-1)), mask_x_ltz); \
-    x = _mm256_andnot_si256(mask_x_ltz, x); \
-    x = _mm256_or_si256(x, x_us); \
+    __m256i x_us = _mm256_mul_epi32(x, _mm256_set1_epi32(-1)); \
+    x = _mm256_blendv_epi8(x, x_us, mask_x_ltz); \
     x = _mm256_sub_epi64(x, _mm256_srli_epi64(thr, shift_xsub)); \
     x = _mm256_and_si256(x, _mm256_cmpgt_epi64(x, _mm256_setzero_si256())); \
     __m256i x_sq = _mm256_srli_epi64(_mm256_add_epi64(_mm256_mul_epi32(x, x), _mm256_set1_epi64x(add_shift_xsq)), shift_xsq); \
@@ -785,22 +784,17 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride,
             shift15_64b_signExt_256(od_div_td_lo, od_div_td_lo);
             shift15_64b_signExt_256(od_div_td_hi, od_div_td_hi);
 
-            __m256i tmp_kh = _mm256_or_si256(_mm256_and_si256(oh_div_th_lo, _mm256_set1_epi64x(0xFFFFFFFF)), _mm256_slli_epi64(oh_div_th_hi, 32));
-            __m256i tmp_kv = _mm256_or_si256(_mm256_and_si256(ov_div_tv_lo, _mm256_set1_epi64x(0xFFFFFFFF)), _mm256_slli_epi64(ov_div_tv_hi, 32));
-            __m256i tmp_kd = _mm256_or_si256(_mm256_and_si256(od_div_td_lo, _mm256_set1_epi64x(0xFFFFFFFF)), _mm256_slli_epi64(od_div_td_hi, 32));
+            __m256i tmp_kh = _mm256_blend_epi32(oh_div_th_lo, _mm256_slli_epi64(oh_div_th_hi, 32), 0xAA);
+            __m256i tmp_kv = _mm256_blend_epi32(ov_div_tv_lo, _mm256_slli_epi64(ov_div_tv_hi, 32), 0xAA);
+            __m256i tmp_kd = _mm256_blend_epi32(od_div_td_lo, _mm256_slli_epi64(od_div_td_hi, 32), 0xAA);
 
             __m256i eqz_oh = _mm256_cmpeq_epi32(oh, _mm256_setzero_si256());
             __m256i eqz_ov = _mm256_cmpeq_epi32(ov, _mm256_setzero_si256());
             __m256i eqz_od = _mm256_cmpeq_epi32(od, _mm256_setzero_si256());
 
-            tmp_kh = _mm256_andnot_si256(eqz_oh, tmp_kh);
-            tmp_kh = _mm256_or_si256(tmp_kh, _mm256_and_si256(const_32768_32b, eqz_oh));
-
-            tmp_kv = _mm256_andnot_si256(eqz_ov, tmp_kv);
-            tmp_kv = _mm256_or_si256(tmp_kv, _mm256_and_si256(const_32768_32b, eqz_ov));
-
-            tmp_kd = _mm256_andnot_si256(eqz_od, tmp_kd);
-            tmp_kd = _mm256_or_si256(tmp_kd, _mm256_and_si256(const_32768_32b, eqz_od));
+			tmp_kh = _mm256_blendv_epi8(tmp_kh, const_32768_32b, eqz_oh);
+			tmp_kv = _mm256_blendv_epi8(tmp_kv, const_32768_32b, eqz_ov);
+			tmp_kd = _mm256_blendv_epi8(tmp_kd, const_32768_32b, eqz_od);
 
             tmp_kh = _mm256_max_epi32(tmp_kh, _mm256_setzero_si256());
             tmp_kh = _mm256_min_epi32(tmp_kh, const_32768_32b);
@@ -868,17 +862,13 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride,
             d_min = _mm256_and_si256(d_min, gt0_rst_d_f);
             d_max = _mm256_and_si256(d_max, lt0_rst_d_f);
 
-            __m256i h_min_max = _mm256_and_si256(_mm256_or_si256(h_min, h_max), mask_rst_h);
-            __m256i v_min_max = _mm256_and_si256(_mm256_or_si256(v_min, v_max), mask_rst_v);
-            __m256i d_min_max = _mm256_and_si256(_mm256_or_si256(d_min, d_max), mask_rst_d);
+            __m256i h_min_max = _mm256_or_si256(h_min, h_max);
+            __m256i v_min_max = _mm256_or_si256(v_min, v_max);
+            __m256i d_min_max = _mm256_or_si256(d_min, d_max);
 
-            rst_h = _mm256_andnot_si256(mask_rst_h, rst_h);
-            rst_v = _mm256_andnot_si256(mask_rst_v, rst_v);
-            rst_d = _mm256_andnot_si256(mask_rst_d, rst_d);
-
-            rst_h = _mm256_or_si256(h_min_max, rst_h);
-            rst_v = _mm256_or_si256(v_min_max, rst_v);
-            rst_d = _mm256_or_si256(d_min_max, rst_d);
+            rst_h = _mm256_blendv_epi8(rst_h, h_min_max, mask_rst_h);
+            rst_v = _mm256_blendv_epi8(rst_v, v_min_max, mask_rst_v);
+            rst_d = _mm256_blendv_epi8(rst_d, d_min_max, mask_rst_d);
 
             th = _mm256_sub_epi32(th, rst_h);
             tv = _mm256_sub_epi32(tv, rst_v);
