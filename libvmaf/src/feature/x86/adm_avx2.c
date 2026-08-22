@@ -819,20 +819,10 @@ void adm_decouple_avx2(AdmBuffer *buf, int w, int h, int stride,
             rst_v = _mm256_srai_epi32(rst_v, 15);
             rst_d = _mm256_srai_epi32(rst_d, 15);
 
-            __m256 inv_32768 = _mm256_set1_ps((float)1/32768);
-            __m256 inv_64 = _mm256_set1_ps((float)1/64);
-
-            __m256 kh_inv_32768 = _mm256_mul_ps(inv_32768, _mm256_cvtepi32_ps(tmp_kh));
-            __m256 oh_inv_64 = _mm256_mul_ps(inv_64, _mm256_cvtepi32_ps(oh));
-            __m256 rst_h_f = _mm256_mul_ps(kh_inv_32768, oh_inv_64);
-
-            __m256 kv_inv_32768 = _mm256_mul_ps(inv_32768, _mm256_cvtepi32_ps(tmp_kv));
-            __m256 ov_inv_64 = _mm256_mul_ps(inv_64, _mm256_cvtepi32_ps(ov));
-            __m256 rst_v_f = _mm256_mul_ps(kv_inv_32768, ov_inv_64);
-
-            __m256 kd_inv_32768 = _mm256_mul_ps(inv_32768, _mm256_cvtepi32_ps(tmp_kd));
-            __m256 od_inv_64 = _mm256_mul_ps(inv_64, _mm256_cvtepi32_ps(od));
-            __m256 rst_d_f = _mm256_mul_ps(kd_inv_32768, od_inv_64);
+            // Only sign matters
+            __m256 rst_h_f = _mm256_mul_ps(_mm256_cvtepi32_ps(tmp_kh), _mm256_cvtepi32_ps(oh));
+            __m256 rst_v_f = _mm256_mul_ps(_mm256_cvtepi32_ps(tmp_kv), _mm256_cvtepi32_ps(ov));
+            __m256 rst_d_f = _mm256_mul_ps(_mm256_cvtepi32_ps(tmp_kd), _mm256_cvtepi32_ps(od));
 
             __m256i gt0_rst_h_f = (__m256i)(_mm256_cmp_ps(rst_h_f, _mm256_setzero_ps(), 14));
             __m256i lt0_rst_h_f = (__m256i)(_mm256_cmp_ps(rst_h_f, _mm256_setzero_ps(), 1));
@@ -1662,18 +1652,15 @@ void adm_decouple_s123_avx2(AdmBuffer *buf, int w, int h, int stride,
 
              __m256i rst_d_epi32 = merge_64_to_32(rst_d_lo_epi64, rst_d_hi_epi64);
 
-            __m256 inv_32768_f = _mm256_set1_ps((double)1/32768);
-            __m256 inv_64_f = _mm256_set1_ps((double)1/64);
-
-            // rst_h_f
+            // rst_h_f (sign only)
             __m256 kh_f = _mm256_cvtepi32_ps(merge_64_to_32(kh_lo_epi64, kh_hi_epi64));
-            __m256 rst_h_f = _mm256_mul_ps(_mm256_mul_ps(kh_f, inv_32768_f), _mm256_mul_ps(_mm256_cvtepi32_ps(oh_epi32), inv_64_f));
+            __m256 rst_h_f = _mm256_mul_ps(kh_f, _mm256_cvtepi32_ps(oh_epi32));
             // rst_v_f
             __m256 kv_f = _mm256_cvtepi32_ps(merge_64_to_32(kv_lo_epi64, kv_hi_epi64));
-            __m256 rst_v_f = _mm256_mul_ps(_mm256_mul_ps(kv_f, inv_32768_f), _mm256_mul_ps(_mm256_cvtepi32_ps(ov_epi32), inv_64_f));
+            __m256 rst_v_f = _mm256_mul_ps(kv_f, _mm256_cvtepi32_ps(ov_epi32));
             // rst_d_f
-             __m256 kd_f = _mm256_cvtepi32_ps(merge_64_to_32(kd_lo_epi64, kd_hi_epi64));
-            __m256 rst_d_f = _mm256_mul_ps(_mm256_mul_ps(kd_f, inv_32768_f), _mm256_mul_ps(_mm256_cvtepi32_ps(od_epi32), inv_64_f));
+            __m256 kd_f = _mm256_cvtepi32_ps(merge_64_to_32(kd_lo_epi64, kd_hi_epi64));
+            __m256 rst_d_f = _mm256_mul_ps(kd_f, _mm256_cvtepi32_ps(od_epi32));
 
             __m256d adm_gain_d = _mm256_set1_pd(adm_enhn_gain_limit);
 
