@@ -86,27 +86,29 @@ acc_right = _mm256_madd_epi16(_mm256_unpackhi_epi16(r0, zero), f); \
   acc_left = _mm256_add_epi32(acc_left, _mm256_madd_epi16(_mm256_unpacklo_epi16(r0, r1), f)); \
   acc_right = _mm256_add_epi32(acc_right, _mm256_madd_epi16(_mm256_unpackhi_epi16(r0, r1), f));
 
+#define PRODUCT_BIAS_16 _mm256_set1_epi16(INT16_MIN)
+#define PRODUCT_BIAS_32 _mm256_set1_epi32(INT32_MIN)
 
 // compute r0 * r1 * f and set 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
 #define multiply3(accum_ref_left, accum_ref_right, r0, r1, f) \
 { \
-    __m256i mul = _mm256_mullo_epi16(r0, r1); \
-    __m256i lo = _mm256_mullo_epi16(mul, f); \
-    __m256i hi = _mm256_mulhi_epu16(mul, f); \
-    accum_ref_left = _mm256_unpacklo_epi16(lo, hi); \
-    accum_ref_right = _mm256_unpackhi_epi16(lo, hi); \
+    __m256i zero = _mm256_setzero_si256(); \
+    __m256i mul = _mm256_xor_si256(_mm256_mullo_epi16(r0, r1), PRODUCT_BIAS_16); \
+    accum_ref_left = _mm256_add_epi32(PRODUCT_BIAS_32, \
+        _mm256_madd_epi16(_mm256_unpacklo_epi16(mul, zero), f)); \
+    accum_ref_right = _mm256_add_epi32(PRODUCT_BIAS_32, \
+        _mm256_madd_epi16(_mm256_unpackhi_epi16(mul, zero), f)); \
 }
 
-// compute r0 * r1 * f and add to 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
-#define multiply3_and_accumulate(accum_ref_left, accum_ref_right, r0, r1, f) \
+// compute (r0 * r1 + r2 * r3) * f and add to 32-bit accumulators (shuffled 0 1 2 3 8 9 10 11 / 4 5 6 7 12 13 14 15)
+#define multiply3_and_accumulate(accum_ref_left, accum_ref_right, r0, r1, r2, r3, f) \
 { \
-    __m256i mul = _mm256_mullo_epi16(r0, r1); \
-    __m256i lo = _mm256_mullo_epi16(mul, f); \
-    __m256i hi = _mm256_mulhi_epu16(mul, f); \
-    __m256i left = _mm256_unpacklo_epi16(lo, hi); \
-    __m256i right = _mm256_unpackhi_epi16(lo, hi); \
-    accum_ref_left = _mm256_add_epi32(accum_ref_left, left); \
-    accum_ref_right = _mm256_add_epi32(accum_ref_right, right); \
+    __m256i mul0 = _mm256_xor_si256(_mm256_mullo_epi16(r0, r1), PRODUCT_BIAS_16); \
+    __m256i mul1 = _mm256_xor_si256(_mm256_mullo_epi16(r2, r3), PRODUCT_BIAS_16); \
+    accum_ref_left = _mm256_add_epi32(accum_ref_left, \
+        _mm256_madd_epi16(_mm256_unpacklo_epi16(mul0, mul1), f)); \
+    accum_ref_right = _mm256_add_epi32(accum_ref_right, \
+        _mm256_madd_epi16(_mm256_unpackhi_epi16(mul0, mul1), f)); \
 }
 
 #define shuffle_and_save(addr, x, y) \
@@ -178,12 +180,9 @@ void vif_statistic_8_avx2(struct VifPublicState *s, float *num, float *den, unsi
                 multiply2_and_accumulate(accum_mu2_left, accum_mu2_right, d0, d1, f0);
 
                 // accumulate filtered(r * r, d * d, r * d)
-                multiply3_and_accumulate(accum_ref_left, accum_ref_right, r0, r0, f0);
-                multiply3_and_accumulate(accum_ref_left, accum_ref_right, r1, r1, f0);
-                multiply3_and_accumulate(accum_dis_left, accum_dis_right, d0, d0, f0);
-                multiply3_and_accumulate(accum_dis_left, accum_dis_right, d1, d1, f0);
-                multiply3_and_accumulate(accum_ref_dis_left, accum_ref_dis_right, d0, r0, f0);
-                multiply3_and_accumulate(accum_ref_dis_left, accum_ref_dis_right, d1, r1, f0);
+                multiply3_and_accumulate(accum_ref_left, accum_ref_right, r0, r0, r1, r1, f0);
+                multiply3_and_accumulate(accum_dis_left, accum_dis_right, d0, d0, d1, d1, f0);
+                multiply3_and_accumulate(accum_ref_dis_left, accum_ref_dis_right, d0, r0, d1, r1, f0);
             }
 
             __m256i x = _mm256_set1_epi32(128);
