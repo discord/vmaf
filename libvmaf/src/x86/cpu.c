@@ -67,6 +67,7 @@ unsigned vmaf_get_cpu_flags_x86(void) {
             if (X(xr.eax, 0x00000006)) /* XMM/YMM */ {
                 if (max_leaf >= 7) {
                     vmaf_cpu_cpuid(&r, 7, 0);
+                    const unsigned max_subleaf = r.eax;
                     if (X(r.ebx, 0x00000128)) /* BMI1/BMI2/AVX2 */ {
                         flags |= VMAF_X86_CPU_FLAG_AVX2;
                         if (X(xr.eax, 0x000000e0)) /* ZMM/OPMASK */ {
@@ -74,6 +75,11 @@ unsigned vmaf_get_cpu_flags_x86(void) {
                                 flags |= VMAF_X86_CPU_FLAG_AVX512;
                             if (X(r.ebx, 0xd0230000) && X(r.ecx, 0x00005f42))
                                 flags |= VMAF_X86_CPU_FLAG_AVX512ICL;
+                        }
+                        if (max_subleaf >= 1) {
+                            vmaf_cpu_cpuid(&r, 7, 1);
+                            if (X(r.eax, 0x00800000)) /* AVX-IFMA */
+                                flags |= VMAF_X86_CPU_FLAG_AVXIFMA;
                         }
                     }
                 }

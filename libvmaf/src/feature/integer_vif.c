@@ -603,6 +603,10 @@ static int init(VmafFeatureExtractor *fex, enum VmafPixelFormat pix_fmt,
         s->subsample_rd_16 = vif_subsample_rd_16_avx2;
         s->vif_statistic_8 = vif_statistic_8_avx2;
         s->vif_statistic_16 = vif_statistic_16_avx2;
+        if (flags & VMAF_X86_CPU_FLAG_AVXIFMA) {
+            s->vif_statistic_8 = vif_statistic_8_avx2_ifma;
+            s->vif_statistic_16 = vif_statistic_16_avx2_ifma;
+        }
     }
 #if HAVE_AVX512
     if (flags & VMAF_X86_CPU_FLAG_AVX512) {

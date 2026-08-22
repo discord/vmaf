@@ -76,6 +76,7 @@ enum VmafPoolingMethod {
  *                    if cpumask & 8:  disable AVX2
  *                    if cpumask & 16: disable AVX512
  *                    if cpumask & 32: disable AVX512ICL
+ *                    if cpumask & 64: disable AVXIFMA
  * 
  * @param gpumask     Restrict permitted GPU operations.
  *                    if gpumask: disable CUDA
